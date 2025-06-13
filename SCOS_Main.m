@@ -1,157 +1,180 @@
-%% Recording Integrity Check 
-%%
-% Opens a dialog to select the root recordings folder.
-% User must manually select the "recordings" folder (one level up).
-% Scans its subfolders.
-% Looks for tiff files in each subfolder.
-% Checks if the first image can be read.
-% Prints warnings if there are problems.
-% Checks if all pixels are divisible by 16 (MSB check), as required in the assignment.
 
-%%
-%%%% Should we also check the contents of each folder and do excessive validation and add defaults, etc.?
-%%%% Not sure if it's necessary
+%% Neurophotonics Homework Assignment 2
 
-%%
-%% Recording Integrity Check 
-% clear;
+%% 1. Initialize
 clc;
 clear all;
-% clear figure;
 close all;
 addpath('./auxiliary_code/');
-%% check validity of recordings
+windowSize = 7;
 
-
-%% Select Recording Directory
-recordingDir = uigetdir('C:\Users\ayele\Desktop\תואר שני\נוירופוטוניקה\מטלה 2', ...
-                        'Select a folder');
+%% 2. Select Recording Directory
+recordingDir = uigetdir('', 'Select a folder');
 if recordingDir == 0
     error('No folder was selected. Exiting...');
 end
 
-%% Discover Subfolders
+%% 3. Discover and Parse Folders
 subfolders = dir(recordingDir);
 subfolders = subfolders([subfolders.isdir]);
 subfolders = subfolders(~ismember({subfolders.name}, {'.', '..'}));
 
+% Create a dynamic list of video recordings and their metadata
 
-
-
-%% Loop Through Folders: Check .tiff and Extract Metadata
-recordData = cell(length(subfolders), 1);
-videoRecordings = cell(length(subfolders), 1);
-divRec=false;
+recordData = {};
+videoRecordings = {};
+divRec = false;
 for i = 1:length(subfolders)
     folderName = subfolders(i).name;
     fullPath = fullfile(recordingDir, folderName);
     fprintf('\nAnalyzing: %s\n', folderName);
 
-    % Check for required keywords in folder name
-    if ~contains(folderName, 'Gain') || ...
-       ~contains(folderName, 'expT') || ...
-       ~contains(folderName, 'BL') || ...
-         ~contains(folderName, 'FR')
+    if ~contains(folderName, 'Gain') || ~contains(folderName, 'expT') || ~contains(folderName, 'BL') || ~contains(folderName, 'FR')
         warning('Folder "%s" does not contain all required parameters.', folderName);
+
         continue;
     end
 
-    % Check if .tiff files exist
     tiffFiles = dir(fullfile(fullPath, '*.tiff'));
     if isempty(tiffFiles)
         warning('No .tiff files found in folder: %s', fullPath);
         continue;
     end
 
-    % Try to load image and metadata
     try
         recordings = ReadRecord(fullPath);
-        videoRecordings{i} = recordings;
+        if isempty(recordings)
+            warning('No recordings found in folder: %s', fullPath);
+            continue;
+        end
+        videoRecordings{end + 1} = recordings;
         fprintf('Loaded image successfully from: %s\n', folderName);
         info = GetRecordInfo(fullPath);
-        if divRec || all(mod(recordings(1:400),16) == 0)
-            rec = rec/16; % because Basler camera for some reason uses last 12 bits instead of first
-            divRec=true;
+        if divRec || all(mod(recordings(:), 16) == 0)
+            rec = rec / 16;
+            divRec = true;
+            info.numBits = 12; % Adjust bit depth if necessary
         end
-        
 
-        
-       recordData{i} = struct( ...
-    'BlackLevel', info.name.BL, ...
-    'FrameRate', info.name.FR, ...
-    'Gain_dB', info.name.Gain, ...
-    'ExposureTime', info.name.expT, ...
-    'FileType', info.fileType, ...
-    'CameraSN', info.cameraSN, ...
-    'Bits', info.nBits, ...
-    'FolderName', folderName, ...
-    'FullPath', fullPath ...
-);
-        
-
-      
+        recordData{end+1} = struct( ...
+            'BlackLevel', info.name.BL, ...
+            'FrameRate', info.name.FR, ...
+            'Gain_dB', info.name.Gain, ...
+            'ExposureTime', info.name.expT, ...
+            'FileType', info.fileType, ...
+            'CameraSN', info.cameraSN, ...
+            'Bits', info.nBits, ...
+            'FolderName', folderName, ...
+            'FullPath', fullPath ...
+        );
 
     catch ME
         error('Error processing folder "%s": %s', folderName, ME.message);
+ 
     end
 end
-
-%% Get dark video index 
-% Remove empty entries from videoRecordings and recordData
-for vids = 1:length(videoRecordings)
-    if isempty(videoRecordings{vids})
-        videoRecordings(vids) = [];
-        recordData(vids) = [];
+%% find dark video index
+% since this is a cell array, we need to find the index of the first dark video
+for i = 1:length(videoRecordings)
+    if contains(recordData{i}.FolderName, 'dark')
+        darkVideoIndex = i;
+        break;
     end
 end
-
-% Find the first dark video and the first video (non-dark)
-darkVideoIndex = [];
-videoIndex = [];
-for i = 1:length(recordData)
-    if contains(recordData{i}.FolderName,'dark')
-        darkVideoIndex(end+1) = i;  % Store index of dark video
-    else 
-        videoIndex(end+1) = i;
+if exist('darkVideoIndex', 'var') == 0
+    error('No dark video found in the selected recordings.');
+end
+% find video index
+for i = 1:length(videoRecordings)
+    if ~contains(recordData{i}.FolderName, 'dark')
+        videoIndex = i;
+        break;
     end
 end
-% Check if dark video and video exist
-if isempty(darkVideoIndex)
-    error('No dark video found in the recordings.');
-end
-if isempty(videoIndex)
-    error('No video found in the recordings.');
-end
-% check if there are more than one dark video or video
-if length(darkVideoIndex) > 1
-    warning('Multiple dark videos found. Using the first one.');
-    darkVideoIndex = darkVideoIndex(1);
-end
-if length(videoIndex) > 1
-    warning('Multiple videos found. Using the first one.');
-    videoIndex = videoIndex(1);
+if exist('videoIndex', 'var') == 0
+    error('No video found in the selected recordings.');
 end
 
 
-%% get mask
-[mask, roi]= ROIMask(videoRecordings{videoIndex}(:,:,1));
 
+%% 4. Define ROI
+try
+    [mask, roi] = ROIMask(videoRecordings{videoIndex}(:,:,1));
+catch ME
+    error('Error defining ROI: %s', ME.message);
+end
 
-%% שלב 5 – חישוב רקע: σ_bg ו- <I_bg>
+%% 5. Compute Background Mean and Variance
+mean_Ibg = mean(videoRecordings{videoIndex}, 3) - recordData{videoIndex}.BlackLevel;
+sigma_bg = stdfilt(mean_Ibg, true(windowSize)).^2;
 
+figure;
+imagesc(mean_Ibg); colorbar;
+title('Mean Background Image');
 
+figure;
+imagesc(sigma_bg); colorbar;
+title('Background Variance Image');
 
-% חישוב סטטיסטיקות
-mean_Ibg = mean(videoRecordings{darkVideoIndex},3);
-sigma_bg = std(mean_Ibg(mask));
+%% 6. Compute Pixel Non-Uniformity
+dark_size = size(videoRecordings{darkVideoIndex}, 3);
+if dark_size < 500
+    error('Not enough frames in the dark video. At least 500 frames are required.');
+end
+backgroundImg = mean(videoRecordings{darkVideoIndex}(:,:,1:500), 3);
+std_sp = std(videoRecordings{darkVideoIndex}(:,:,1:500), 0, 3).^2;
+darkVarPerWindow = imboxfilt(std_sp, windowSize);
 
-% הדפסה
-% fprintf('<I_bg> = %.3f\n', mean_Ibg);
-fprintf('σ_bg = %.3f\n', sigma_bg);
+%% 7. Estimate System Gain
+meanDark = mean_Ibg;
+efficiency = 10500;
+[gainCalc, gainTheoretical] = GainCalc(videoRecordings{videoIndex}, meanDark, mask, efficiency, recordData{videoIndex}.Gain_dB, recordData{videoIndex}.Bits);
 
+%% 8. Compute K² per Frame
+numFrames = size(videoRecordings{videoIndex}, 3);
+K2_raw = zeros(1, numFrames);
+K2_corrected = zeros(1, numFrames);
+BFi = zeros(1, numFrames);
 
-%% Calculate the Gain
-meanDark=mean_Ibg;
-efficiency=10500;
-recordData{videoIndex}.Bits=12;
-[gainCalc, gainTheotycal ]= GainCalc(videoRecordings{videoIndex}, meanDark,mask, efficiency, recordData{videoIndex}.Gain_dB, recordData{videoIndex}.Bits);
+for frame = 1:numFrames
+    im = videoRecordings{videoIndex}(:,:,frame);
+    meanIm = mean(im(mask) - backgroundImg(mask)) - (recordData{videoIndex}.BlackLevel - recordData{darkVideoIndex}.BlackLevel);
+    Var = stdfilt(im, true(windowSize)).^2;
+
+    K2_raw(frame) = mean(Var(mask)) / (meanIm^2);
+    K2_corrected(frame) = mean(Var(mask) - gainCalc * meanIm - darkVarPerWindow(mask) - sigma_bg(mask) - 1/12) / (meanIm^2);
+    BFi(frame) = 1 / K2_corrected(frame);
+end
+
+%% 9. Plot K² Over Time
+timeVector = (1:numFrames) / recordData{videoIndex}.FrameRate;
+
+% Plot K^2 (raw and corrected) in one plot
+figure;
+subplot(2, 1, 1);
+plot(timeVector, K2_raw, 'r-', 'LineWidth', 1.5);
+xlabel('Time (s)');
+ylabel('K^2');
+title('Raw Contrast (K^2) Over Time');
+grid on;
+subplot(2, 1, 2);
+plot(timeVector, K2_corrected, 'b-', 'LineWidth', 1.5);
+xlabel('Time (s)');
+ylabel('K^2');
+title('Corrected Contrast (K^2) Over Time');
+grid on;
+saveas(gcf, fullfile(recordingDir, 'SCOS_K2_Over_Time.png'));
+
+% Plot BFi in a separate plot
+figure;
+plot(timeVector, BFi, 'g-', 'LineWidth', 1.5);
+xlabel('Time (s)');
+ylabel('BFi');
+title('BFi Over Time');
+grid on;
+saveas(gcf, fullfile(recordingDir, 'SCOS_BFi_Over_Time.png'));
+
+%% 10. Save Noise Components and Results
+noiseFile = fullfile(recordingDir, 'SCOS_Noise_Components.mat');
+save(noiseFile, 'mean_Ibg', 'sigma_bg', 'std_sp', 'darkVarPerWindow', 'gainCalc', 'K2_raw', 'K2_corrected', 'BFi');
+disp('Noise components and results saved.');

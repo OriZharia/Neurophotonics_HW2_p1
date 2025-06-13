@@ -83,4 +83,21 @@ disp(NoiseTable)
 
 writetable(NoiseTable, 'NoiseResults.csv');
 
+%% plot  imagesc(mean(rec,3)) ) for each file in one figure
+% adjust figure size
+figure('Position', [100, 100, 1200, 800]);
+% Create subplots for each record
+for i = 1:length(filePaths)
+    rec = ReadRecord(filePaths{i});
+    subplot(2, 2, i);
+    imagesc(mean(rec, 3)); % Display mean image for each record
+    title(fileLabels{i});
+    colorbar;
+end
+% save figure
+saveas(gcf, 'MeanImages.png');
+% close figure
+close all;
+
+
 
