@@ -1,5 +1,5 @@
 
-function [gainCalc, gainTheotycal ]= GainCalc(recVid, meanDark,mask, efficiency, gainVid, numBits)
+function [gainCalc, gainTheotycal , fig ]= GainCalc(recVid, meanDark,mask, efficiency, gainVid, numBits)
 % GainCalc calculates the gain of a system based on amplitude, frequency, and phase.
 % It uses a linear fit to the variance and mean of the video frames.
 % Inputs:
@@ -13,6 +13,7 @@ function [gainCalc, gainTheotycal ]= GainCalc(recVid, meanDark,mask, efficiency,
 % Outputs:
 %   gainCalc: Calculated gain of the camera system
 %   gainTheotycal: Theoretical gain based on camera system parameters
+%   fig: Figure handle for the plot
 
 
 
@@ -44,7 +45,7 @@ gainCalc= gainBase;
 gainTheotycal = 2^numBits / efficiency * gainIn;
 
 %% Create a figure to visualize the fit with the calculated gain
-figure;
+fig = figure;
 scatter(meanFrame, varFrame, 'filled');
 hold on;
 x = linspace(min(meanFrame), max(meanFrame), 10);
@@ -61,10 +62,6 @@ text(0.05 * (max(meanFrame)-min(meanFrame)) + min(meanFrame), ...
      ['Theoretical Gain: ', num2str(gainTheotycal, '%.3g')]}, ...
     'FontSize', 10, 'VerticalAlignment', 'top', 'BackgroundColor', 'w');
 
-%% save the figure
-saveas(gcf, 'GainCalculation.png');
-% Close the figure
-close(gcf);
 end
 
 
