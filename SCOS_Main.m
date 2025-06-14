@@ -128,9 +128,13 @@ if exist(roiFile, 'file')
     % If user chooses not to load, define a new ROI
     if lower(userInput) ~= 'y'
         try
-            [mask, roi] = ROIMask(videoRecordings{videoIndex}(:,:,1));
+            [mask, roi, figRoi] = ROIMask(videoRecordings{videoIndex}(:,:,1));
             % Save the new ROI to file
             save(roiFile, 'mask', 'roi');
+            % save ROi figure as fig
+            savefig(figRoi, fullfile(recordingDir, 'ROI_Figure.fig'));
+            close(figRoi); % Close the figure after saving
+
         catch ME
             error('Error defining ROI: %s', ME.message);
         end
@@ -143,9 +147,12 @@ if exist(roiFile, 'file')
         catch ME
             warning('Error loading ROI from file, will define a new ROI instead');
             try
-                [mask, roi] = ROIMask(videoRecordings{videoIndex}(:,:,1));
+                [mask, roi,figRoi] = ROIMask(videoRecordings{videoIndex}(:,:,1));
                 % Save the new ROI to file
                 save(roiFile, 'mask', 'roi');
+                 % save ROi figure as fig
+                savefig(figRoi, fullfile(recordingDir, 'ROI_Figure.fig'));
+                close(figRoi); % Close the figure after saving
             catch ME
                 error('Error defining ROI: %s', ME.message);
             end
