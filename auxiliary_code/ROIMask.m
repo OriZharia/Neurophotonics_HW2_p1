@@ -1,12 +1,14 @@
-function [mask, roi] = ROIMask(fig)
+function [mask, roi, figRoi] = ROIMask(fig)
     % Function to create a circular ROI mask on a 2D image
     % Input:
     %   fig - 2D image matrix
     % Outputs:
     %   mask - binary mask with 1s inside the circle, 0s outside
     %   roi - circle ROI object (contains center and radius info)
+    %   figRoi - figure handle for the ROI drawing
 
-    figure;
+
+    figRoi=figure;
     imagesc(fig);
     axis image;
     colormap gray;
@@ -22,4 +24,5 @@ function [mask, roi] = ROIMask(fig)
     
     % Create mask: 1 inside circle, 0 outside
     mask = dist_from_center <= roi.Radius;
+    
 end
