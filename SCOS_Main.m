@@ -64,9 +64,9 @@ for i = 1:length(subfolders)
         info = GetRecordInfo(fullPath);
         % Check if the recordings are divisible by 16
         if divRec || all(mod(recordings(:), 16) == 0)
-            rec = rec / 16;
+            recordings = recordings ./ 16;
             divRec = true;
-            info.numBits = 12; % Adjust bit depth if necessary
+            % info.numBits = 12; % Adjust bit depth if necessary
         end
         % Store the recording metadata
         recordData{end+1} = struct( ...
@@ -171,83 +171,81 @@ else
     end
 end
 
+%% 5. Compute Background Noise (Read Noise)
+% Check if read-noise data already exists
+% If the read-noise data is already saved, load it
+% If not, compute them from the dark video recordings
+% Use the dark video index to get the correct recording directory
 
-%% 5. Compute Background Mean and Variance
-% Check if background mean and variance are already saved
-% If the background mean and variance are already saved, load them
+recordingDir= recordData{darkVideoIndex}.FullPath;
+% Check read-noise data already exists
+readNoiseFile = fullfile(recordingDir, 'SCOS_Read_Noise.mat');
+if exist(readNoiseFile, 'file')
+    try
+        load(readNoiseFile, 'backgroundImg', 'std_r', 'darkVarPerWindow');
+        fprintf('Loaded pixel non-uniformity data from file: %s\n', readNoiseFile);
+    catch
+        warning('Error loading pixel non-uniformity data from file: %s, will compute them instead.', readNoiseFile);
+        backgroundImg = mean(videoRecordings{darkVideoIndex}, 3);
+        std_r = std(videoRecordings{darkVideoIndex}(:,:,:), 0, 3).^2;
+        darkVarPerWindow = imboxfilt(std_r, windowSize);
+        save(readNoiseFile, 'backgroundImg', 'std_r', 'darkVarPerWindow');
+        fprintf('Calculated and saved pixel non-uniformity data to file: %s\n', readNoiseFile);
+    end
+else
+    dark_size = size(videoRecordings{darkVideoIndex}, 3);
+    backgroundImg = mean(videoRecordings{darkVideoIndex}, 3);
+    std_r = std(videoRecordings{darkVideoIndex}, 0, 3).^2;
+    darkVarPerWindow = imboxfilt(std_r, windowSize);
+    save(readNoiseFile, 'backgroundImg', 'std_r', 'darkVarPerWindow');
+    fprintf('Calculated and saved pixel non-uniformity data to file: %s\n', readNoiseFile);
+end
+
+
+%% 6. Compute Pixel Non-Uniformity
+% Check if pixel non-uniformity data already exists
+% If the pixel non-uniformity data is already saved, load it
 % If not, compute them from the video recordings
 % Use the video index to get the correct recording directory
 
 recordingDir= recordData{videoIndex}.FullPath;
 
-% Check if background mean and variance are already saved
-bgFile = fullfile(recordingDir, 'SCOS_Background_MeanVar.mat');
+% Check pixel non-uniformity data are already saved
+PixelNonUniformityFile = fullfile(recordingDir, 'SCOS_Pixel_NonUniformity.mat');
 % If the file exists, load the background mean and variance
-if exist(bgFile, 'file')
+if exist(PixelNonUniformityFile, 'file')
     try
         % Load the background mean and variance from the file
-        load(bgFile, 'mean_Ibg', 'sigma_bg');
-        fprintf('Loaded background mean and variance from file: %s\n', bgFile);
+        load(PixelNonUniformityFile, 'mean_Isp', 'sigma_sp');
+        fprintf('Loaded pixel non uniformity from file: %s\n', PixelNonUniformityFile);
     % If the file does not exist or loading fails, compute them
     catch ME
-        warning('Error loading background mean and variance from file: %s, will compute them instead.');
-        mean_Ibg = mean(videoRecordings{videoIndex}, 3) - recordData{videoIndex}.BlackLevel;
-        sigma_bg = stdfilt(mean_Ibg, true(windowSize)).^2;
-        save(bgFile, 'mean_Ibg', 'sigma_bg');
-        fprintf('Calculated and saved background mean and variance to file: %s\n', bgFile);
+        warning('Error loading pixel non uniformity from file: %s, will compute them instead.');
+        vid_size = size(videoRecordings{videoIndex}, 3);
+        if vid_size < 500
+            error('Not enough frames in the video. At least 500 frames are required.');
+        end
+        mean_Isp = mean(videoRecordings{videoIndex}, 3) - recordData{videoIndex}.BlackLevel;
+        sigma_sp = stdfilt(mean_Isp, true(windowSize)).^2;
+        save(PixelNonUniformityFile, 'mean_Isp', 'sigma_sp');
+        fprintf('Calculated and saved pixel non uniformity to file: %s\n', PixelNonUniformityFile);
     end 
 % there is no background mean and variance file, compute them  
 else
-    mean_Ibg = mean(videoRecordings{videoIndex}, 3) - recordData{videoIndex}.BlackLevel;
-    sigma_bg = stdfilt(mean_Ibg, true(windowSize)).^2;
-    save(bgFile, 'mean_Ibg', 'sigma_bg');
-    fprintf('Calculated and saved background mean and variance to file: %s\n', bgFile);
+    mean_Isp = mean(videoRecordings{videoIndex}, 3) - recordData{videoIndex}.BlackLevel;
+    sigma_sp = stdfilt(mean_Isp, true(windowSize)).^2;
+    save(PixelNonUniformityFile, 'mean_Isp', 'sigma_sp');
+    fprintf('Calculated and saved pixel non uniformity to file: %s\n', PixelNonUniformityFile);
 end
 
 figure;
-imagesc(mean_Ibg); colorbar;
+imagesc(mean_Isp); colorbar;
 title('Mean Background Image');
 
 figure;
-imagesc(sigma_bg); colorbar;
+imagesc(sigma_sp); colorbar;
 title('Background Variance Image');
 
-%% 6. Compute Pixel Non-Uniformity
-% Check if pixel non-uniformity data already exists
-% If the pixel non-uniformity data is already saved, load it
-% If not, compute them from the dark video recordings
-% Use the dark video index to get the correct recording directory
-
-recordingDir= recordData{darkVideoIndex}.FullPath;
-% Check if pixel non-uniformity data already exists
-pixelNonUniformityFile = fullfile(recordingDir, 'SCOS_Pixel_NonUniformity.mat');
-if exist(pixelNonUniformityFile, 'file')
-    try
-        load(pixelNonUniformityFile, 'backgroundImg', 'std_sp', 'darkVarPerWindow');
-        fprintf('Loaded pixel non-uniformity data from file: %s\n', pixelNonUniformityFile);
-    catch
-        warning('Error loading pixel non-uniformity data from file: %s, will compute them instead.', pixelNonUniformityFile);
-        dark_size = size(videoRecordings{darkVideoIndex}, 3);
-        if dark_size < 500
-            error('Not enough frames in the dark video. At least 500 frames are required.');
-        end
-        backgroundImg = mean(videoRecordings{darkVideoIndex}(:,:,1:500), 3);
-        std_sp = std(videoRecordings{darkVideoIndex}(:,:,1:500), 0, 3).^2;
-        darkVarPerWindow = imboxfilt(std_sp, windowSize);
-        save(pixelNonUniformityFile, 'backgroundImg', 'std_sp', 'darkVarPerWindow');
-        fprintf('Calculated and saved pixel non-uniformity data to file: %s\n', pixelNonUniformityFile);
-    end
-else
-    dark_size = size(videoRecordings{darkVideoIndex}, 3);
-    if dark_size < 500
-        error('Not enough frames in the dark video. At least 500 frames are required.');
-    end
-    backgroundImg = mean(videoRecordings{darkVideoIndex}(:,:,1:500), 3);
-    std_sp = std(videoRecordings{darkVideoIndex}(:,:,1:500), 0, 3).^2;
-    darkVarPerWindow = imboxfilt(std_sp, windowSize);
-    save(pixelNonUniformityFile, 'backgroundImg', 'std_sp', 'darkVarPerWindow');
-    fprintf('Calculated and saved pixel non-uniformity data to file: %s\n', pixelNonUniformityFile);
-end
 
 %% 7. Estimate System Gain
 % Check if gain calculation data already exists
@@ -268,7 +266,7 @@ if exist(gainFile, 'file')
     % If loading fails, compute them
     catch
         warning('Error loading gain calculation data from file: %s, will compute them instead.', gainFile);
-        meanDark = mean_Ibg;
+        meanDark = backgroundImg;
         efficiency = 10500; % Example efficiency value, adjust as needed
         [gainCalc, gainTheoretical, gainFig] = GainCalc(videoRecordings{videoIndex}, meanDark, mask, efficiency, recordData{videoIndex}.Gain_dB, recordData{videoIndex}.Bits);
         save(gainFile, 'gainCalc', 'gainTheoretical');
@@ -279,7 +277,7 @@ if exist(gainFile, 'file')
     end
 % If the gain calculation file does not exist, compute them
 else
-    meanDark = mean_Ibg;
+    meanDark = backgroundImg;
     efficiency = 10500; % Example efficiency value, adjust as needed
     [gainCalc, gainTheoretical, gainFig] = GainCalc(videoRecordings{videoIndex}, meanDark, mask, efficiency, recordData{videoIndex}.Gain_dB, recordData{videoIndex}.Bits);
     save(gainFile, 'gainCalc', 'gainTheoretical');
@@ -304,11 +302,11 @@ w = waitbar(0, 'Calculating K² values...');
 for frame = 1:numFrames
     
     im = videoRecordings{videoIndex}(:,:,frame);
-    meanIm = mean(im(mask) - backgroundImg(mask)) - (recordData{videoIndex}.BlackLevel - recordData{darkVideoIndex}.BlackLevel);
+    meanIm = mean(im(mask) - backgroundImg(mask))-(recordData{videoIndex}.BlackLevel - recordData{darkVideoIndex}.BlackLevel);
     Var = stdfilt(im, true(windowSize)).^2;
 
     K2_raw(frame) = mean(Var(mask)) / (meanIm^2);
-    K2_corrected(frame) = mean(Var(mask) - gainCalc * meanIm - darkVarPerWindow(mask) - sigma_bg(mask) - 1/12) / (meanIm^2);
+    K2_corrected(frame) = mean(Var(mask) - gainCalc * meanIm - darkVarPerWindow(mask) - sigma_sp(mask) - 1/12) / (meanIm^2);
     BFi(frame) = 1 / K2_corrected(frame);
     if mod(frame, 100) == 0
         waitbar(frame / numFrames, w, sprintf('Calculating K² values... Frame %d of %d', frame, numFrames));
