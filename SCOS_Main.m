@@ -110,6 +110,7 @@ if exist('videoIndex', 'var') == 0
     error('No video found in the selected recordings.');
 end
 
+%     dark_size = size(videoRecordings{darkVideoIndex}, 3);
 
 
 %% 4. Define ROI
@@ -182,22 +183,21 @@ recordingDir= recordData{darkVideoIndex}.FullPath;
 readNoiseFile = fullfile(recordingDir, 'SCOS_Read_Noise.mat');
 if exist(readNoiseFile, 'file')
     try
-        load(readNoiseFile, 'backgroundImg', 'std_r', 'darkVarPerWindow');
+        load(readNoiseFile, 'backgroundImg', 'var_r', 'darkVarPerWindow');
         fprintf('Loaded pixel non-uniformity data from file: %s\n', readNoiseFile);
     catch
         warning('Error loading pixel non-uniformity data from file: %s, will compute them instead.', readNoiseFile);
         backgroundImg = mean(videoRecordings{darkVideoIndex}, 3);
-        std_r = std(videoRecordings{darkVideoIndex}(:,:,:), 0, 3).^2;
-        darkVarPerWindow = imboxfilt(std_r, windowSize);
-        save(readNoiseFile, 'backgroundImg', 'std_r', 'darkVarPerWindow');
+        var_r = std(videoRecordings{darkVideoIndex}(:,:,:), 0, 3).^2;
+        darkVarPerWindow = imboxfilt(var_r, windowSize);
+        save(readNoiseFile, 'backgroundImg', 'var_r', 'darkVarPerWindow');
         fprintf('Calculated and saved pixel non-uniformity data to file: %s\n', readNoiseFile);
     end
 else
-    dark_size = size(videoRecordings{darkVideoIndex}, 3);
     backgroundImg = mean(videoRecordings{darkVideoIndex}, 3);
-    std_r = std(videoRecordings{darkVideoIndex}, 0, 3).^2;
-    darkVarPerWindow = imboxfilt(std_r, windowSize);
-    save(readNoiseFile, 'backgroundImg', 'std_r', 'darkVarPerWindow');
+    var_r = std(videoRecordings{darkVideoIndex}, 0, 3).^2;
+    darkVarPerWindow = imboxfilt(var_r, windowSize);
+    save(readNoiseFile, 'backgroundImg', 'var_r', 'darkVarPerWindow');
     fprintf('Calculated and saved pixel non-uniformity data to file: %s\n', readNoiseFile);
 end
 
@@ -216,7 +216,7 @@ PixelNonUniformityFile = fullfile(recordingDir, 'SCOS_Pixel_NonUniformity.mat');
 if exist(PixelNonUniformityFile, 'file')
     try
         % Load the background mean and variance from the file
-        load(PixelNonUniformityFile, 'mean_Isp', 'sigma_sp');
+        load(PixelNonUniformityFile, 'mean_Isp', 'var_sp');
         fprintf('Loaded pixel non uniformity from file: %s\n', PixelNonUniformityFile);
     % If the file does not exist or loading fails, compute them
     catch ME
@@ -226,15 +226,15 @@ if exist(PixelNonUniformityFile, 'file')
             error('Not enough frames in the video. At least 500 frames are required.');
         end
         mean_Isp = mean(videoRecordings{videoIndex}, 3) - recordData{videoIndex}.BlackLevel;
-        sigma_sp = stdfilt(mean_Isp, true(windowSize)).^2;
-        save(PixelNonUniformityFile, 'mean_Isp', 'sigma_sp');
+        var_sp = stdfilt(mean_Isp, true(windowSize)).^2;
+        save(PixelNonUniformityFile, 'mean_Isp', 'var_sp');
         fprintf('Calculated and saved pixel non uniformity to file: %s\n', PixelNonUniformityFile);
     end 
 % there is no background mean and variance file, compute them  
 else
     mean_Isp = mean(videoRecordings{videoIndex}, 3) - recordData{videoIndex}.BlackLevel;
-    sigma_sp = stdfilt(mean_Isp, true(windowSize)).^2;
-    save(PixelNonUniformityFile, 'mean_Isp', 'sigma_sp');
+    var_sp = stdfilt(mean_Isp, true(windowSize)).^2;
+    save(PixelNonUniformityFile, 'mean_Isp', 'var_sp');
     fprintf('Calculated and saved pixel non uniformity to file: %s\n', PixelNonUniformityFile);
 end
 
@@ -243,7 +243,7 @@ imagesc(mean_Isp); colorbar;
 title('Mean Background Image');
 
 figure;
-imagesc(sigma_sp); colorbar;
+imagesc(var_sp); colorbar;
 title('Background Variance Image');
 
 
@@ -306,7 +306,7 @@ for frame = 1:numFrames
     Var = stdfilt(im, true(windowSize)).^2;
 
     K2_raw(frame) = mean(Var(mask)) / (meanIm^2);
-    K2_corrected(frame) = mean(Var(mask) - gainCalc * meanIm - darkVarPerWindow(mask) - sigma_sp(mask) - 1/12) / (meanIm^2);
+    K2_corrected(frame) = mean(Var(mask) - gainCalc * meanIm - darkVarPerWindow(mask) - var_sp(mask) - 1/12) / (meanIm^2);
     BFi(frame) = 1 / K2_corrected(frame);
     if mod(frame, 100) == 0
         waitbar(frame / numFrames, w, sprintf('Calculating K² values... Frame %d of %d', frame, numFrames));
