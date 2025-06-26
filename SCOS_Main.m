@@ -110,7 +110,13 @@ if exist('videoIndex', 'var') == 0
     error('No video found in the selected recordings.');
 end
 
-%     dark_size = size(videoRecordings{darkVideoIndex}, 3);
+% check if both videos are of the same size
+if size(videoRecordings{videoIndex}, 1) ~= size(videoRecordings{darkVideoIndex}, 1) || ...
+   size(videoRecordings{videoIndex}, 2) ~= size(videoRecordings{darkVideoIndex}, 2)
+    error('The dark video and the main video must be of the same size.');
+end
+% for future dimention checks, we will save the video size (2D)
+videoSize = size(videoRecordings{videoIndex}, 1:2);
 
 
 %% 4. Define ROI
@@ -122,6 +128,7 @@ end
 % Check if ROI is already defined
 recordingDir= recordData{videoIndex}.FullPath;
 roiFile = fullfile(recordingDir, 'ROI_Mask.mat');
+newPOIFlag = false; % Flag to indicate if a new ROI is defined
 if exist(roiFile, 'file')
     % If ROI file exists, prompt user to load it
     fprintf('ROI file found, do you want to load it? (y/n): ');
@@ -129,6 +136,7 @@ if exist(roiFile, 'file')
     % If user chooses not to load, define a new ROI
     if lower(userInput) ~= 'y'
         try
+            newPOIFlag = true; % Set flag to indicate new ROI definition
             [mask, roi, figRoi] = ROIMask(videoRecordings{videoIndex}(:,:,1));
             % Save the new ROI to file
             save(roiFile, 'mask', 'roi');
@@ -143,11 +151,15 @@ if exist(roiFile, 'file')
     else
         try
             load(roiFile, 'mask', 'roi');
+            if size(mask, 1) ~= videoSize(1) || size(mask, 2) ~= videoSize(2)|| length(size(mask)) ~= 2
+                error('ROI mask size does not match video size. Please redefine the ROI.');
+            end
             fprintf('Loaded ROI from file: %s\n', roiFile);
         % If loading fails, prompt user to define a new ROI
         catch ME
             warning('Error loading ROI from file, will define a new ROI instead');
             try
+                newPOIFlag = true; % Set flag to indicate new ROI definition
                 [mask, roi,figRoi] = ROIMask(videoRecordings{videoIndex}(:,:,1));
                 % Save the new ROI to file
                 save(roiFile, 'mask', 'roi');
@@ -164,6 +176,7 @@ else
     fprintf('No ROI file found. Please define a new ROI.\n');
     % Load the first frame of the video to define ROI
     try
+        newPOIFlag = true; % Set flag to indicate new ROI definition
         [mask, roi] = ROIMask(videoRecordings{videoIndex}(:,:,1));
         % Save the new ROI to file
         save(roiFile, 'mask', 'roi');
@@ -171,6 +184,7 @@ else
         error('Error defining ROI: %s', ME.message);
     end
 end
+
 
 %% 5. Compute Background Noise (Read Noise)
 % Check if read-noise data already exists
@@ -184,6 +198,16 @@ readNoiseFile = fullfile(recordingDir, 'SCOS_Read_Noise.mat');
 if exist(readNoiseFile, 'file')
     try
         load(readNoiseFile, 'backgroundImg', 'var_r', 'darkVarPerWindow');
+        % Check if the loaded data matches the expected size
+        if size(backgroundImg, 1) ~= videoSize(1) || size(backgroundImg, 2) ~= videoSize(2)|| length(size(backgroundImg)) ~= 2
+            error('Loaded background image size does not match video size. Please recompute the read noise.');
+        end
+        if size(var_r, 1) ~= videoSize(1) || size(var_r, 2) ~= videoSize(2)|| length(size(var_r)) ~= 2
+            error('Loaded variance image size does not match video size. Please recompute the read noise.');
+        end
+        if size(darkVarPerWindow, 1) ~= videoSize(1) || size(darkVarPerWindow, 2) ~= videoSize(2)|| length(size(darkVarPerWindow)) ~= 2
+            error('Loaded dark variance image size does not match video size. Please recompute the read noise.');
+        end
         fprintf('Loaded pixel non-uniformity data from file: %s\n', readNoiseFile);
     catch
         warning('Error loading pixel non-uniformity data from file: %s, will compute them instead.', readNoiseFile);
@@ -201,6 +225,14 @@ else
     fprintf('Calculated and saved pixel non-uniformity data to file: %s\n', readNoiseFile);
 end
 
+figure;
+imagesc(backgroundImg); colorbar;
+title('Mean Dark Frame');
+figure;
+imagesc(var_r); colorbar;
+title('Dark Frame Variance');
+
+
 
 %% 6. Compute Pixel Non-Uniformity
 % Check if pixel non-uniformity data already exists
@@ -217,10 +249,17 @@ if exist(PixelNonUniformityFile, 'file')
     try
         % Load the background mean and variance from the file
         load(PixelNonUniformityFile, 'mean_Isp', 'var_sp');
+        % Check if the loaded data matches the expected size
+        if size(mean_Isp, 1) ~= videoSize(1) || size(mean_Isp, 2) ~= videoSize(2)|| length(size(mean_Isp)) ~= 2
+            error('Loaded mean image size does not match video size. Please recompute the pixel non-uniformity.');
+        end
+        if size(var_sp, 1) ~= videoSize(1) || size(var_sp, 2) ~= videoSize(2)|| length(size(var_sp)) ~= 2
+            error('Loaded variance image size does not match video size. Please recompute the pixel non-uniformity.');
+        end
         fprintf('Loaded pixel non uniformity from file: %s\n', PixelNonUniformityFile);
     % If the file does not exist or loading fails, compute them
     catch ME
-        warning('Error loading pixel non uniformity from file: %s, will compute them instead.');
+        warning('Error loading pixel non uniformity from file: %s, will compute them instead.', PixelNonUniformityFile);
         vid_size = size(videoRecordings{videoIndex}, 3);
         if vid_size < 500
             error('Not enough frames in the video. At least 500 frames are required.');
@@ -232,6 +271,10 @@ if exist(PixelNonUniformityFile, 'file')
     end 
 % there is no background mean and variance file, compute them  
 else
+    vid_size = size(videoRecordings{videoIndex}, 3);
+    if vid_size < 500
+        error('Not enough frames in the video. At least 500 frames are required.');
+    end
     mean_Isp = mean(videoRecordings{videoIndex}, 3) - recordData{videoIndex}.BlackLevel;
     var_sp = stdfilt(mean_Isp, true(windowSize)).^2;
     save(PixelNonUniformityFile, 'mean_Isp', 'var_sp');
@@ -258,10 +301,14 @@ recordingDir= recordData{videoIndex}.FullPath;
 gainFile = fullfile(recordingDir, 'SCOS_Gain_Calculation.mat');
 gainFigFile = fullfile(recordingDir, 'SCOS_Gain_Calculation_Fig.png');
 
-% If the gain calculation file exists, load it
-if exist(gainFile, 'file')
+% If the gain calculation file exists and there is no new ROI defined open the file
+if exist(gainFile, 'file') && ~newPOIFlag
     try
         load(gainFile, 'gainCalc', 'gainTheoretical');
+        % Check if the loaded data matches the expected size (a scalar value)
+        if ~isscalar(gainCalc) || ~isscalar(gainTheoretical)
+            error('Loaded gain calculation data does not match expected size. Please recompute the gain.');
+        end
         fprintf('Loaded gain calculation data from file: %s\n', gainFile);
     % If loading fails, compute them
     catch
@@ -275,7 +322,7 @@ if exist(gainFile, 'file')
         close(gainFig); % Close the figure after saving
         fprintf('Calculated and saved gain calculation data to file: %s\n', gainFile);
     end
-% If the gain calculation file does not exist, compute them
+% If the gain calculation file does not exist, or if new ROI is defined, compute the gain
 else
     meanDark = backgroundImg;
     efficiency = 10500; % Example efficiency value, adjust as needed
