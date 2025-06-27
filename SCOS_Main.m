@@ -356,7 +356,7 @@ for frame = 1:numFrames
     K2_raw(frame) = mean(varIm(mask)) / (meanIm^2);
     K2_corrected(frame) = mean(varIm(mask) - gainCalc * meanIm - darkVarPerWindow(mask) - var_sp(mask) - 1/12) / (meanIm^2);
     BFi(frame) = 1 / K2_corrected(frame);
-    if mod(frame, 100) == 0
+    if mod(frame, 50) == 0
         waitbar(frame / numFrames, w, sprintf('Calculating K² values... Frame %d of %d', frame, numFrames));
     end
 end
