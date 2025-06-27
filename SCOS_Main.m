@@ -349,11 +349,12 @@ w = waitbar(0, 'Calculating K² values...');
 for frame = 1:numFrames
     
     im = videoRecordings{videoIndex}(:,:,frame);
-    meanIm = mean(im(mask) - backgroundImg(mask))-(recordData{videoIndex}.BlackLevel - recordData{darkVideoIndex}.BlackLevel);
-    Var = stdfilt(im, true(windowSize)).^2;
+    im= im-backgroundImg - (recordData{videoIndex}.BlackLevel - recordData{darkVideoIndex}.BlackLevel);
+    meanIm = mean(im(mask));
+    varIm = stdfilt(im, true(windowSize)).^2;
 
-    K2_raw(frame) = mean(Var(mask)) / (meanIm^2);
-    K2_corrected(frame) = mean(Var(mask) - gainCalc * meanIm - darkVarPerWindow(mask) - var_sp(mask) - 1/12) / (meanIm^2);
+    K2_raw(frame) = mean(varIm(mask)) / (meanIm^2);
+    K2_corrected(frame) = mean(varIm(mask) - gainCalc * meanIm - darkVarPerWindow(mask) - var_sp(mask) - 1/12) / (meanIm^2);
     BFi(frame) = 1 / K2_corrected(frame);
     if mod(frame, 100) == 0
         waitbar(frame / numFrames, w, sprintf('Calculating K² values... Frame %d of %d', frame, numFrames));
