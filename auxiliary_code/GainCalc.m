@@ -9,6 +9,7 @@ function [gainCalc, gainTheotycal , fig ]= GainCalc(recVid, meanDark,mask, effic
 %   efficiency: Efficiency of the camera system
 %   gainVid: Gain value from the video metadata (in dB)
 %   numBits: Number of bits of the camera system
+%   window: Window size for the standard deviation filter
 
 % Outputs:
 %   gainCalc: Calculated gain of the camera system
@@ -23,10 +24,14 @@ videoLength = size(recVid, 3);
 %% Calcualre Variance and mean
 meanFrame = zeros(videoLength, 1);
 varFrame = zeros(videoLength, 1);
+w= waitbar(0, 'Calculating gain...');
 for i = 1:(videoLength)
     rec= recVid(:,:,i);
     meanFrame(i) = mean(rec(mask)-meanDark(mask), "all");
-    varFrame(i) = var(rec(mask)- meanDark(mask));
+    varFrame(i) = var((rec(mask)- meanDark(mask))); % Variance of the frame
+    if mod(i, 100) == 0
+        waitbar(i/videoLength, w, sprintf('Calculating gain... %d/%d', i, videoLength));
+    end
 end
 
 
@@ -35,14 +40,15 @@ end
 p = polyfit(meanFrame, varFrame, 1);
 %% Calculate gain by using the slope of the linear fit
 % Gain is the slope of the linear fit divided by the efficiency
-gainBase= p(1);
-% gainBase is the gain set by the camera system 
+gainCalc= p(1);
 
+% Convert gain from dB to linear scale
 gainIn=  10^(gainVid/20);
-% Calculate the gain of the camera system
-gainCalc= gainBase;
-
+% Calculate theoretical gain based on camera system parameters
 gainTheotycal = 2^numBits / efficiency * gainIn;
+
+%% Close the waitbar
+close(w);
 
 %% Create a figure to visualize the fit with the calculated gain
 fig = figure;
