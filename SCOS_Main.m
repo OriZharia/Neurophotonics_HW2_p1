@@ -247,7 +247,7 @@ PixelNonUniformityFile = fullfile(recordingDir, 'SCOS_Pixel_NonUniformity.mat');
 % If the file exists, load the background mean and variance
 if exist(PixelNonUniformityFile, 'file')
     try
-        % Load the background mean and variance from the file
+        % Load the video mean and variance from the file
         load(PixelNonUniformityFile, 'mean_Isp', 'var_sp');
         % Check if the loaded data matches the expected size
         if size(mean_Isp, 1) ~= videoSize(1) || size(mean_Isp, 2) ~= videoSize(2)|| length(size(mean_Isp)) ~= 2
@@ -269,7 +269,7 @@ if exist(PixelNonUniformityFile, 'file')
         save(PixelNonUniformityFile, 'mean_Isp', 'var_sp');
         fprintf('Calculated and saved pixel non uniformity to file: %s\n', PixelNonUniformityFile);
     end 
-% there is no background mean and variance file, compute them  
+% there is no video mean and variance file, compute them  
 else
     vid_size = size(videoRecordings{videoIndex}, 3);
     if vid_size < 500
@@ -314,7 +314,7 @@ if exist(gainFile, 'file') && ~newPOIFlag
     catch
         warning('Error loading gain calculation data from file: %s, will compute them instead.', gainFile);
         meanDark = backgroundImg;
-        efficiency = 10500; % Example efficiency value, adjust as needed
+        efficiency = 10400; 
         [gainCalc, gainTheoretical, gainFig] = GainCalc(videoRecordings{videoIndex}, meanDark, mask, efficiency, recordData{videoIndex}.Gain_dB, recordData{videoIndex}.Bits);
         save(gainFile, 'gainCalc', 'gainTheoretical');
         % Save the gain figure
@@ -325,7 +325,7 @@ if exist(gainFile, 'file') && ~newPOIFlag
 % If the gain calculation file does not exist, or if new ROI is defined, compute the gain
 else
     meanDark = backgroundImg;
-    efficiency = 10500; % Example efficiency value, adjust as needed
+    efficiency = 10400; 
     [gainCalc, gainTheoretical, gainFig] = GainCalc(videoRecordings{videoIndex}, meanDark, mask, efficiency, recordData{videoIndex}.Gain_dB, recordData{videoIndex}.Bits);
     save(gainFile, 'gainCalc', 'gainTheoretical');
     % Save the gain figure
@@ -385,16 +385,42 @@ grid on;
 saveas(gcf, fullfile(recordingDir, 'SCOS_K2_Over_Time.png'));
 savefig(gcf,fullfile(recordingDir, 'SCOS_K2_Over_Time.fig'))
 
-% Plot BFi in a separate plot
+% Plot BFi in a separate plot with FFT
+
+% Compute FFT of BFi
+BFi_fft = abs(fft(BFi));
+freq= (0:length(BFi_fft)-1) * recordData{videoIndex}.FrameRate / length(BFi_fft);
+% take only the positive frequencies
+freq = freq(1:floor(length(freq)/2));
+BFi_fft = BFi_fft(1:floor(length(BFi_fft)/2));
+
+% find the maximum frequency from 0.5 HZ forward
+% Find the index of the maximum FFT amplitude for frequencies > 0.5 Hz
+[~, idx] = max(BFi_fft(freq > 0.5));
+% Adjust index to match the freq vector
+freqAbove05 = freq(freq > 0.5);
+maxFreq = freqAbove05(idx);
+BPM = maxFreq * 60; % Convert to beats per minute
+
+
 figure;
+subplot(2, 1, 1);
 plot(timeVector, BFi, 'g-', 'LineWidth', 1.5);
 xlabel('Time (s)');
 ylabel('BFi');
 title('BFi Over Time');
 grid on;
+
+subplot(2, 1, 2);
+plot(freq, BFi_fft, 'm-', 'LineWidth', 1.5);
+xlabel('Frequency (Hz)');
+ylabel('Amplitude');
+title(sprintf('FFT of BFi (Max Frequency: %.2f Hz, BPM: %.2f)', maxFreq, BPM));
+xlim([0.5, max(freq)]);
+grid on;
+
 saveas(gcf, fullfile(recordingDir, 'SCOS_BFi_Over_Time.png'));
 savefig(gcf, fullfile(recordingDir, 'SCOS_BFi_Over_Time.fig'));
-
 
 %% 10. Save Results and figures
 % Save all results in a structured format
